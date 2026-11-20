@@ -1,0 +1,31 @@
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chess-engine-analysis-system"
+version = "0.1.0"
+description = "An independently developed chess engine and analysis platform featuring explainable decision-making, game analysis, search visualization, and performance benchmarking."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
