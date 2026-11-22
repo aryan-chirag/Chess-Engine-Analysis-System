@@ -11,7 +11,7 @@ from chess_engine.core.constants import (
     CastlingRights,
     is_valid_square,
 )
-
+from chess_engine.core.zobrist import compute_zobrist_hash
 from chess_engine.core.move import Move, MoveFlag
 
 from chess_engine.core.pieces import (
@@ -49,6 +49,8 @@ class Position:
         self.halfmove_clock = halfmove_clock
 
         self.fullmove_number = fullmove_number
+
+        self.zobrist_hash = compute_zobrist_hash(self)
 
     @classmethod
     def starting_position(cls):
@@ -381,6 +383,7 @@ class Position:
             previous_en_passant_square=self.en_passant_square,
             previous_halfmove_clock=self.halfmove_clock,
             previous_fullmove_number=self.fullmove_number,
+            previous_zobrist_hash=self.zobrist_hash,
         )
 
         # --------------------------------------------------------
@@ -458,6 +461,9 @@ class Position:
 
         # Switch sides.
         self.side_to_move = self.side_to_move.opposite
+
+        # Update position hash.
+        self.zobrist_hash = compute_zobrist_hash(self)
 
         return previous_state
 
@@ -546,6 +552,8 @@ class Position:
         self.halfmove_clock = move_state.previous_halfmove_clock
 
         self.fullmove_number = move_state.previous_fullmove_number
+
+        self.zobrist_hash = move_state.previous_zobrist_hash
 
 
 
