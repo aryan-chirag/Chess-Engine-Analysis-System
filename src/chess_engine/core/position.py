@@ -110,10 +110,8 @@ class Position:
 
     def make_move(self, move: Move) -> MoveState:
         """
-        Executes a normal move, capture or promotion.
-
-        Special moves such as en passant and castling
-        are handled separately.
+        Executes a normal move, capture, promotion,
+        double pawn push or en passant capture.
 
         Returns the previous position state for undo.
         """
@@ -121,10 +119,8 @@ class Position:
         if not isinstance(move, Move):
             raise TypeError("Expected a Move object.")
 
-        if move.is_en_passant or move.is_castling:
-            raise ValueError(
-                "En passant and castling are not supported yet."
-            )
+        if move.is_castling:
+            raise ValueError("Castling is not supported yet.")
 
         moving_piece = self.board.get_piece(move.from_square)
 
@@ -134,31 +130,65 @@ class Position:
         if piece_color(moving_piece) != self.side_to_move:
             raise ValueError("Cannot move an opponent's piece.")
 
-        destination_piece = self.board.get_piece(move.to_square)
-
         moving_piece_type = piece_type(moving_piece)
 
-        # Validate destination and capture flag.
-        if move.is_capture:
+        destination_piece = self.board.get_piece(move.to_square)
 
-            if destination_piece == EMPTY:
+        # En passant validation.
+        captured_square = move.to_square
+        captured_piece = destination_piece
+
+        if move.is_en_passant:
+
+            if moving_piece_type != PieceType.PAWN:
+                raise ValueError("Only pawns can capture en passant.")
+
+            if move.to_square != self.en_passant_square:
+                raise ValueError("Invalid en passant target square.")
+
+            if destination_piece != EMPTY:
+                raise ValueError("En passant destination must be empty.")
+
+            direction = 16 if self.side_to_move == Color.WHITE else -16
+
+            captured_square = move.to_square - direction
+
+            captured_piece = self.board.get_piece(captured_square)
+
+            if captured_piece != make_piece(
+                self.side_to_move.opposite,
+                PieceType.PAWN,
+            ):
+                raise ValueError("No opponent pawn available for en passant.")
+
+            if not move.is_capture:
+                raise ValueError("En passant must be marked as a capture.")
+
+            # Verify that the pawn moves diagonally one square.
+            if abs(move.to_square - move.from_square) not in (15, 17):
+                raise ValueError("Invalid en passant movement.")
+
+        else:
+
+            # Validate ordinary captures.
+            if move.is_capture:
+
+                if destination_piece == EMPTY:
+                    raise ValueError(
+                        "Capture move must target an occupied square."
+                    )
+
+                if piece_color(destination_piece) == self.side_to_move:
+                    raise ValueError("Cannot capture a friendly piece.")
+
+                if piece_type(destination_piece) == PieceType.KING:
+                    raise ValueError("A king cannot be captured.")
+
+            elif destination_piece != EMPTY:
+
                 raise ValueError(
-                    "Capture move must target an occupied square."
+                    "Quiet move cannot target an occupied square."
                 )
-
-            if piece_color(destination_piece) == self.side_to_move:
-                raise ValueError(
-                    "Cannot capture a friendly piece."
-                )
-
-            if piece_type(destination_piece) == PieceType.KING:
-                raise ValueError("A king cannot be captured.")
-
-        elif destination_piece != EMPTY:
-
-            raise ValueError(
-                "Quiet move cannot target an occupied square."
-            )
 
         # Validate promotion.
         destination_rank = move.to_square >> 4
@@ -180,23 +210,53 @@ class Position:
         if move.is_promotion:
 
             if moving_piece_type != PieceType.PAWN:
-                raise ValueError(
-                    "Only pawns can promote."
-                )
+                raise ValueError("Only pawns can promote.")
 
             if not reaches_promotion_rank:
                 raise ValueError(
                     "Promotion is only allowed on the final rank."
                 )
 
-        # Save the previous state.
+        # Validate double pawn push.
+        if move.is_double_pawn_push:
+
+            if moving_piece_type != PieceType.PAWN:
+                raise ValueError("Only pawns can move two squares.")
+
+            starting_rank = (
+                1 if self.side_to_move == Color.WHITE else 6
+            )
+
+            direction = (
+                16 if self.side_to_move == Color.WHITE else -16
+            )
+
+            if (move.from_square >> 4) != starting_rank:
+                raise ValueError(
+                    "Double pawn push must start from the pawn's initial rank."
+                )
+
+            if move.to_square != move.from_square + (2 * direction):
+                raise ValueError("Invalid double pawn push distance.")
+
+            intermediate_square = move.from_square + direction
+
+            if self.board.get_piece(intermediate_square) != EMPTY:
+                raise ValueError(
+                    "Cannot jump over an occupied square."
+                )
+
+            if destination_piece != EMPTY:
+                raise ValueError(
+                    "Double pawn push destination must be empty."
+                )
+
+        # Save the previous position state.
         previous_state = MoveState(
             moved_piece=moving_piece,
-            captured_piece=destination_piece,
+            captured_piece=captured_piece,
             captured_square=(
-                move.to_square
-                if destination_piece != EMPTY
-                else None
+                captured_square if captured_piece != EMPTY else None
             ),
             previous_side_to_move=self.side_to_move,
             previous_castling_rights=self.castling_rights,
@@ -205,33 +265,31 @@ class Position:
             previous_fullmove_number=self.fullmove_number,
         )
 
-        # Remove the moving piece from its original square.
+        # Remove the moving piece.
         self.board.set_piece(move.from_square, EMPTY)
 
-        # Remove the captured piece implicitly by replacing it.
+        # Remove the captured piece.
+        if captured_piece != EMPTY:
+            self.board.set_piece(captured_square, EMPTY)
+
+        # Handle promotion.
         if move.is_promotion:
 
-            promoted_piece = make_piece(
+            placed_piece = make_piece(
                 self.side_to_move,
                 move.promotion,
             )
 
-            self.board.set_piece(
-                move.to_square,
-                promoted_piece,
-            )
-
         else:
 
-            self.board.set_piece(
-                move.to_square,
-                moving_piece,
-            )
+            placed_piece = moving_piece
 
-        # Reset the halfmove clock after pawn moves or captures.
+        self.board.set_piece(move.to_square, placed_piece)
+
+        # Update the halfmove clock.
         if (
             moving_piece_type == PieceType.PAWN
-            or move.is_capture
+            or captured_piece != EMPTY
         ):
 
             self.halfmove_clock = 0
@@ -240,13 +298,24 @@ class Position:
 
             self.halfmove_clock += 1
 
-        # Increment after Black's move.
+        # Set en passant target after a double pawn push.
+        self.en_passant_square = None
+
+        if move.is_double_pawn_push:
+
+            self.en_passant_square = (
+                move.from_square
+                + (
+                    16 if self.side_to_move == Color.WHITE else -16
+                )
+            )
+
+        # Increment fullmove number after Black's move.
         if self.side_to_move == Color.BLACK:
             self.fullmove_number += 1
 
+        # Switch sides.
         self.side_to_move = self.side_to_move.opposite
-
-        self.en_passant_square = None
 
         return previous_state
 
