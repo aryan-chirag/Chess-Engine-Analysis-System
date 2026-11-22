@@ -466,6 +466,92 @@ class Position:
 
 
 
+    def undo_move(self, move: Move, move_state: MoveState):
+        """Reverses a previously executed move and restores the position."""
+
+        if not isinstance(move, Move):
+            raise TypeError("Expected a Move object.")
+
+        if not isinstance(move_state, MoveState):
+            raise TypeError("Expected a MoveState object.")
+
+        # The side to move must be the opponent of the side
+        # that originally made the move.
+        if self.side_to_move != move_state.previous_side_to_move.opposite:
+            raise ValueError("MoveState does not match the current position.")
+
+        moved_piece = self.board.get_piece(move.to_square)
+
+        if moved_piece == EMPTY:
+            raise ValueError("No piece found on the destination square.")
+
+        # --------------------------------------------------------
+        # REVERSE CASTLING ROOK MOVEMENT
+        # --------------------------------------------------------
+
+        if move.is_castling:
+
+            if move.to_square > move.from_square:
+                rook_from = move.from_square + 3
+                rook_to = move.from_square + 1
+            else:
+                rook_from = move.from_square - 4
+                rook_to = move.from_square - 1
+
+            rook = self.board.get_piece(rook_to)
+
+            if rook != make_piece(
+                move_state.previous_side_to_move,
+                PieceType.ROOK,
+            ):
+                raise ValueError("Castling rook is not in its expected square.")
+
+            self.board.set_piece(rook_to, EMPTY)
+            self.board.set_piece(rook_from, rook)
+
+        # --------------------------------------------------------
+        # REMOVE THE MOVED OR PROMOTED PIECE
+        # --------------------------------------------------------
+
+        self.board.set_piece(move.to_square, EMPTY)
+
+        # Restore the original moving piece.
+        # This also converts a promoted piece back into a pawn.
+        self.board.set_piece(
+            move.from_square,
+            move_state.moved_piece,
+        )
+
+        # --------------------------------------------------------
+        # RESTORE CAPTURED PIECE
+        # --------------------------------------------------------
+
+        if move_state.captured_piece != EMPTY:
+
+            self.board.set_piece(
+                move_state.captured_square,
+                move_state.captured_piece,
+            )
+
+        # --------------------------------------------------------
+        # RESTORE POSITION METADATA
+        # --------------------------------------------------------
+
+        self.side_to_move = move_state.previous_side_to_move
+
+        self.castling_rights = move_state.previous_castling_rights
+
+        self.en_passant_square = move_state.previous_en_passant_square
+
+        self.halfmove_clock = move_state.previous_halfmove_clock
+
+        self.fullmove_number = move_state.previous_fullmove_number
+
+
+
+
+
+
 
     
 
