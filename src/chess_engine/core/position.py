@@ -110,10 +110,10 @@ class Position:
 
     def make_move(self, move: Move) -> MoveState:
         """
-        Executes a normal, non-capturing chess move.
+        Executes a normal move, capture or promotion.
 
-        Special moves, captures and promotions are handled
-        by their dedicated implementations.
+        Special moves such as en passant and castling
+        are handled separately.
 
         Returns the previous position state for undo.
         """
@@ -121,49 +121,83 @@ class Position:
         if not isinstance(move, Move):
             raise TypeError("Expected a Move object.")
 
-        # This implementation only supports ordinary quiet moves.
-        if move.flags != MoveFlag.QUIET:
+        if move.is_en_passant or move.is_castling:
             raise ValueError(
-                "Only normal, non-capturing moves are supported."
+                "En passant and castling are not supported yet."
             )
 
-        # Get the moving piece.
         moving_piece = self.board.get_piece(move.from_square)
 
         if moving_piece == EMPTY:
             raise ValueError("Cannot move from an empty square.")
 
-        # Ensure the moving piece belongs to the current player.
         if piece_color(moving_piece) != self.side_to_move:
-            raise ValueError(
-                "Cannot move an opponent's piece."
-            )
+            raise ValueError("Cannot move an opponent's piece.")
 
-        # The destination must be empty.
-        if self.board.get_piece(move.to_square) != EMPTY:
-            raise ValueError(
-                "Normal move execution cannot capture pieces."
-            )
+        destination_piece = self.board.get_piece(move.to_square)
 
         moving_piece_type = piece_type(moving_piece)
 
-        # A pawn reaching the final rank must promote.
-        destination_rank = move.to_square >> 4
+        # Validate destination and capture flag.
+        if move.is_capture:
 
-        if moving_piece_type == PieceType.PAWN:
-
-            promotion_rank = (
-                7 if self.side_to_move == Color.WHITE else 0
-            )
-
-            if destination_rank == promotion_rank:
+            if destination_piece == EMPTY:
                 raise ValueError(
-                    "Pawn promotion requires a promotion move."
+                    "Capture move must target an occupied square."
                 )
 
-        # Save all metadata required to restore the position.
+            if piece_color(destination_piece) == self.side_to_move:
+                raise ValueError(
+                    "Cannot capture a friendly piece."
+                )
+
+            if piece_type(destination_piece) == PieceType.KING:
+                raise ValueError("A king cannot be captured.")
+
+        elif destination_piece != EMPTY:
+
+            raise ValueError(
+                "Quiet move cannot target an occupied square."
+            )
+
+        # Validate promotion.
+        destination_rank = move.to_square >> 4
+
+        promotion_rank = (
+            7 if self.side_to_move == Color.WHITE else 0
+        )
+
+        reaches_promotion_rank = (
+            moving_piece_type == PieceType.PAWN
+            and destination_rank == promotion_rank
+        )
+
+        if reaches_promotion_rank and not move.is_promotion:
+            raise ValueError(
+                "Pawn reaching the final rank must promote."
+            )
+
+        if move.is_promotion:
+
+            if moving_piece_type != PieceType.PAWN:
+                raise ValueError(
+                    "Only pawns can promote."
+                )
+
+            if not reaches_promotion_rank:
+                raise ValueError(
+                    "Promotion is only allowed on the final rank."
+                )
+
+        # Save the previous state.
         previous_state = MoveState(
             moved_piece=moving_piece,
+            captured_piece=destination_piece,
+            captured_square=(
+                move.to_square
+                if destination_piece != EMPTY
+                else None
+            ),
             previous_side_to_move=self.side_to_move,
             previous_castling_rights=self.castling_rights,
             previous_en_passant_square=self.en_passant_square,
@@ -171,13 +205,34 @@ class Position:
             previous_fullmove_number=self.fullmove_number,
         )
 
-        # Move the piece.
+        # Remove the moving piece from its original square.
         self.board.set_piece(move.from_square, EMPTY)
 
-        self.board.set_piece(move.to_square, moving_piece)
+        # Remove the captured piece implicitly by replacing it.
+        if move.is_promotion:
 
-        # Update the halfmove clock.
-        if moving_piece_type == PieceType.PAWN:
+            promoted_piece = make_piece(
+                self.side_to_move,
+                move.promotion,
+            )
+
+            self.board.set_piece(
+                move.to_square,
+                promoted_piece,
+            )
+
+        else:
+
+            self.board.set_piece(
+                move.to_square,
+                moving_piece,
+            )
+
+        # Reset the halfmove clock after pawn moves or captures.
+        if (
+            moving_piece_type == PieceType.PAWN
+            or move.is_capture
+        ):
 
             self.halfmove_clock = 0
 
@@ -185,18 +240,23 @@ class Position:
 
             self.halfmove_clock += 1
 
-        # Increment fullmove number after Black's move.
+        # Increment after Black's move.
         if self.side_to_move == Color.BLACK:
-
             self.fullmove_number += 1
 
-        # Switch the active player.
         self.side_to_move = self.side_to_move.opposite
 
-        # A normal move clears the previous en passant target.
         self.en_passant_square = None
 
         return previous_state
+
+
+
+
+
+
+
+    
 
     def validate(self):
         """

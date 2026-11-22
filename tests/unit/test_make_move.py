@@ -6,6 +6,19 @@ from chess_engine.core.pieces import Color, PieceType, make_piece
 from chess_engine.core.move import Move
 
 
+
+from chess_engine.core.position import Position
+from chess_engine.core.move import Move, MoveFlag
+from chess_engine.core.pieces import (
+    EMPTY,
+    Color,
+    PieceType,
+    make_piece,
+)
+
+
+
+
 def create_position():
     return Position.starting_position()
 
@@ -113,6 +126,177 @@ def test_cannot_move_opponents_piece():
         from_square=parse_square("e7"),
         to_square=parse_square("e6"),
     )
+
+    with pytest.raises(ValueError):
+        position.make_move(move)
+
+
+def test_capture_removes_opponent_piece():
+    position = Position.starting_position()
+
+    # Prepare a simple capture position.
+    position.board.set_piece(20, EMPTY)
+    position.board.set_piece(36, make_piece(Color.WHITE, PieceType.PAWN))
+    position.board.set_piece(52, make_piece(Color.BLACK, PieceType.PAWN))
+
+    move = Move(
+        from_square=36,
+        to_square=52,
+        flags=MoveFlag.CAPTURE,
+    )
+
+    state = position.make_move(move)
+
+    assert position.board.get_piece(36) == EMPTY
+    assert position.board.get_piece(52) == make_piece(
+        Color.WHITE, PieceType.PAWN
+    )
+
+    assert state.captured_piece == make_piece(
+        Color.BLACK, PieceType.PAWN
+    )
+    assert state.captured_square == 52
+
+
+def test_capture_resets_halfmove_clock():
+    position = Position.starting_position()
+    position.halfmove_clock = 12
+
+    position.board.set_piece(20, EMPTY)
+    position.board.set_piece(36, make_piece(Color.WHITE, PieceType.KNIGHT))
+    position.board.set_piece(52, make_piece(Color.BLACK, PieceType.PAWN))
+
+    move = Move(36, 52, flags=MoveFlag.CAPTURE)
+
+    position.make_move(move)
+
+    assert position.halfmove_clock == 0
+
+
+def test_pawn_promotes_to_queen():
+    position = Position.starting_position()
+
+    position.board.set_piece(100, EMPTY)
+    position.board.set_piece(96, EMPTY)
+    position.board.set_piece(112, EMPTY)
+
+    position.board.set_piece(
+        96,
+        make_piece(Color.WHITE, PieceType.PAWN),
+    )
+
+    move = Move(
+        96,
+        112,
+        promotion=PieceType.QUEEN,
+        flags=MoveFlag.PROMOTION,
+    )
+
+    position.make_move(move)
+
+    assert position.board.get_piece(112) == make_piece(
+        Color.WHITE, PieceType.QUEEN
+    )
+
+
+def test_pawn_can_promote_to_knight():
+    position = Position.starting_position()
+
+    position.board.set_piece(100, EMPTY)
+    position.board.set_piece(96, EMPTY)
+    position.board.set_piece(112, EMPTY)
+
+    position.board.set_piece(
+        96,
+        make_piece(Color.WHITE, PieceType.PAWN),
+    )
+
+    move = Move(
+        96,
+        112,
+        promotion=PieceType.KNIGHT,
+        flags=MoveFlag.PROMOTION,
+    )
+
+    position.make_move(move)
+
+    assert position.board.get_piece(112) == make_piece(
+        Color.WHITE, PieceType.KNIGHT
+    )
+
+
+def test_promotion_capture():
+    position = Position.starting_position()
+
+    # Remove the original black pawn from a7.
+    position.board.set_piece(96, EMPTY)
+
+    # Place a white pawn on a7.
+    position.board.set_piece(
+        96,
+        make_piece(Color.WHITE, PieceType.PAWN),
+    )
+
+    # Place a black rook on b8.
+    position.board.set_piece(
+        113,
+        make_piece(Color.BLACK, PieceType.ROOK),
+    )
+
+    move = Move(
+        96,
+        113,
+        promotion=PieceType.QUEEN,
+        flags=MoveFlag.CAPTURE | MoveFlag.PROMOTION,
+    )
+
+    state = position.make_move(move)
+
+    assert position.board.get_piece(113) == make_piece(
+        Color.WHITE, PieceType.QUEEN
+    )
+
+    assert state.captured_piece == make_piece(
+        Color.BLACK, PieceType.ROOK
+    )
+
+    assert state.captured_square == 113
+
+
+
+
+
+
+def test_capture_cannot_target_friendly_piece():
+    position = Position.starting_position()
+
+    move = Move(0, 16, flags=MoveFlag.CAPTURE)
+
+    with pytest.raises(ValueError):
+        position.make_move(move)
+
+
+def test_capture_cannot_target_empty_square():
+    position = Position.starting_position()
+
+    move = Move(1, 34, flags=MoveFlag.CAPTURE)
+
+    with pytest.raises(ValueError):
+        position.make_move(move)
+
+
+def test_promotion_requires_promotion_flag():
+    position = Position.starting_position()
+
+    position.board.set_piece(100, EMPTY)
+    position.board.set_piece(96, EMPTY)
+
+    position.board.set_piece(
+        96,
+        make_piece(Color.WHITE, PieceType.PAWN),
+    )
+
+    move = Move(96, 112)
 
     with pytest.raises(ValueError):
         position.make_move(move)
