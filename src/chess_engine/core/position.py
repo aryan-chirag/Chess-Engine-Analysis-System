@@ -12,12 +12,18 @@ from chess_engine.core.constants import (
     is_valid_square,
 )
 
+from chess_engine.core.move import Move, MoveFlag
+
 from chess_engine.core.pieces import (
+    EMPTY,
     Color,
     PieceType,
     make_piece,
+    piece_color,
     piece_type,
 )
+
+from chess_engine.core.state import MoveState
 
 
 class Position:
@@ -62,11 +68,11 @@ class Position:
         ]
 
         # White back rank and pawns.
-        for file, piece_type in enumerate(back_rank):
+        for file, current_piece_type in enumerate(back_rank):
 
             board.set_piece(
                 file,
-                make_piece(Color.WHITE, piece_type)
+                make_piece(Color.WHITE, current_piece_type)
             )
 
             board.set_piece(
@@ -75,11 +81,11 @@ class Position:
             )
 
         # Black back rank and pawns.
-        for file, piece_type in enumerate(back_rank):
+        for file, current_piece_type in enumerate(back_rank):
 
             board.set_piece(
                 112 + file,
-                make_piece(Color.BLACK, piece_type)
+                make_piece(Color.BLACK, current_piece_type)
             )
 
             board.set_piece(
@@ -101,6 +107,96 @@ class Position:
                 return square
 
         return None
+
+    def make_move(self, move: Move) -> MoveState:
+        """
+        Executes a normal, non-capturing chess move.
+
+        Special moves, captures and promotions are handled
+        by their dedicated implementations.
+
+        Returns the previous position state for undo.
+        """
+
+        if not isinstance(move, Move):
+            raise TypeError("Expected a Move object.")
+
+        # This implementation only supports ordinary quiet moves.
+        if move.flags != MoveFlag.QUIET:
+            raise ValueError(
+                "Only normal, non-capturing moves are supported."
+            )
+
+        # Get the moving piece.
+        moving_piece = self.board.get_piece(move.from_square)
+
+        if moving_piece == EMPTY:
+            raise ValueError("Cannot move from an empty square.")
+
+        # Ensure the moving piece belongs to the current player.
+        if piece_color(moving_piece) != self.side_to_move:
+            raise ValueError(
+                "Cannot move an opponent's piece."
+            )
+
+        # The destination must be empty.
+        if self.board.get_piece(move.to_square) != EMPTY:
+            raise ValueError(
+                "Normal move execution cannot capture pieces."
+            )
+
+        moving_piece_type = piece_type(moving_piece)
+
+        # A pawn reaching the final rank must promote.
+        destination_rank = move.to_square >> 4
+
+        if moving_piece_type == PieceType.PAWN:
+
+            promotion_rank = (
+                7 if self.side_to_move == Color.WHITE else 0
+            )
+
+            if destination_rank == promotion_rank:
+                raise ValueError(
+                    "Pawn promotion requires a promotion move."
+                )
+
+        # Save all metadata required to restore the position.
+        previous_state = MoveState(
+            moved_piece=moving_piece,
+            previous_side_to_move=self.side_to_move,
+            previous_castling_rights=self.castling_rights,
+            previous_en_passant_square=self.en_passant_square,
+            previous_halfmove_clock=self.halfmove_clock,
+            previous_fullmove_number=self.fullmove_number,
+        )
+
+        # Move the piece.
+        self.board.set_piece(move.from_square, EMPTY)
+
+        self.board.set_piece(move.to_square, moving_piece)
+
+        # Update the halfmove clock.
+        if moving_piece_type == PieceType.PAWN:
+
+            self.halfmove_clock = 0
+
+        else:
+
+            self.halfmove_clock += 1
+
+        # Increment fullmove number after Black's move.
+        if self.side_to_move == Color.BLACK:
+
+            self.fullmove_number += 1
+
+        # Switch the active player.
+        self.side_to_move = self.side_to_move.opposite
+
+        # A normal move clears the previous en passant target.
+        self.en_passant_square = None
+
+        return previous_state
 
     def validate(self):
         """
@@ -142,7 +238,7 @@ class Position:
 
             piece = self.board.get_piece(square)
 
-            if piece == 0:
+            if piece == EMPTY:
                 continue
 
             if piece_type(piece) == PieceType.KING:
@@ -154,10 +250,14 @@ class Position:
                     black_kings += 1
 
         if white_kings != 1:
-            raise ValueError("Position must contain exactly one white king.")
+            raise ValueError(
+                "Position must contain exactly one white king."
+            )
 
         if black_kings != 1:
-            raise ValueError("Position must contain exactly one black king.")
+            raise ValueError(
+                "Position must contain exactly one black king."
+            )
 
         return True
 
