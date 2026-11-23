@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 
+from chess_engine.core.move import Move
+
 
 class Bound(Enum):
     EXACT = auto()
@@ -16,14 +18,14 @@ class TTEntry:
     depth: int
     score: int
     bound: Bound
-    best_move: object | None
+    best_move: Move | None
     generation: int
 
 
 class TranspositionTable:
 
     def __init__(self, size=1_000_000):
-        if not isinstance(size, int) or size <= 0:
+        if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
             raise ValueError("Table size must be a positive integer.")
 
         self.size = size
@@ -31,11 +33,21 @@ class TranspositionTable:
         self.generation = 0
         self.entry_count = 0
 
+    def _validate_key(self, key):
+        if isinstance(key, bool) or not isinstance(key, int):
+            raise ValueError("Transposition key must be an integer.")
+
+        if not 0 <= key < (1 << 64):
+            raise ValueError("Transposition key must be an unsigned 64-bit integer.")
+
     def _index(self, key):
         return key % self.size
 
     def probe(self, key):
         """Retrieve an entry if its complete key matches."""
+
+        self._validate_key(key)
+
         entry = self.entries[self._index(key)]
 
         if entry is not None and entry.key == key:
@@ -44,13 +56,21 @@ class TranspositionTable:
         return None
 
     def store(self, key, depth, score, bound, best_move=None):
-        """Store a search result using depth-preferred replacement."""
+        """Store a search result using depth and generation preferences."""
 
-        if depth < 0:
-            raise ValueError("Search depth cannot be negative.")
+        self._validate_key(key)
+
+        if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
+            raise ValueError("Search depth must be a non-negative integer.")
+
+        if isinstance(score, bool) or not isinstance(score, int):
+            raise ValueError("Search score must be an integer.")
 
         if not isinstance(bound, Bound):
             raise ValueError("Invalid transposition table bound.")
+
+        if best_move is not None and not isinstance(best_move, Move):
+            raise ValueError("Best move must be a Move or None.")
 
         index = self._index(key)
         existing = self.entries[index]
@@ -64,24 +84,44 @@ class TranspositionTable:
             generation=self.generation,
         )
 
+        # Empty slot.
         if existing is None:
             self.entries[index] = new_entry
             self.entry_count += 1
             return
 
-        # Always replace an entry for the same position when:
-        # - The new search is at least as deep.
-        # - The new result is exact.
+        # Same position.
         if existing.key == key:
-            if depth >= existing.depth or bound == Bound.EXACT:
+
+            replace = (
+                depth > existing.depth
+                or (
+                    depth == existing.depth
+                    and bound == Bound.EXACT
+                    and existing.bound != Bound.EXACT
+                )
+            )
+
+            if replace:
                 self.entries[index] = new_entry
+            else:
+                # Preserve the deeper search result, but refresh
+                # its generation and retain a useful move.
+                existing.generation = self.generation
+
+                if best_move is not None:
+                    existing.best_move = best_move
+
             return
 
-        # For collisions, prefer entries from a newer generation
-        # or entries searched at least as deeply.
+        # Different position: prefer deeper entries.
+        # At equal depth, prefer the entry from the newer generation.
         if (
-            existing.generation != self.generation
-            or depth >= existing.depth
+            depth > existing.depth
+            or (
+                depth == existing.depth
+                and existing.generation != self.generation
+            )
         ):
             self.entries[index] = new_entry
 
@@ -96,8 +136,6 @@ class TranspositionTable:
         self.entry_count = 0
 
     def hashfull(self):
-        """Return approximate table occupancy in per-mille."""
-        if self.size == 0:
-            return 0
+        """Return approximate occupied table capacity in per-mille."""
 
         return min(1000, self.entry_count * 1000 // self.size)

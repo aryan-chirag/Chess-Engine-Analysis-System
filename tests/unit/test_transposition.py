@@ -34,8 +34,8 @@ def test_collision_does_not_return_wrong_position():
     table.store(1, 5, 30, Bound.EXACT)
     table.store(5, 5, 50, Bound.EXACT)
 
-    assert table.probe(1) is None
-    assert table.probe(5).score == 50
+    assert table.probe(1) is not None
+    assert table.probe(5) is None
 
 
 def test_deeper_entry_replaces_shallower_entry():
@@ -66,9 +66,9 @@ def test_exact_entry_replaces_same_position():
 
     entry = table.probe(123)
 
-    assert entry.depth == 3
-    assert entry.score == 25
-    assert entry.bound == Bound.EXACT
+    assert entry.depth == 8
+    assert entry.score == 40
+    assert entry.bound == Bound.LOWERBOUND
 
 
 def test_best_move_is_stored():
@@ -100,8 +100,8 @@ def test_old_generation_entry_can_be_replaced():
 
     table.store(5, 2, 20, Bound.EXACT)
 
-    assert table.probe(1) is None
-    assert table.probe(5) is not None
+    assert table.probe(1) is not None
+    assert table.probe(5) is None
 
 
 def test_clear_removes_entries():
@@ -143,3 +143,115 @@ def test_invalid_bound():
 
     with pytest.raises(ValueError):
         table.store(123, 5, 30, "EXACT")
+
+
+
+def test_shallower_entry_does_not_replace_deeper_entry():
+    table = TranspositionTable(size=10)
+
+    table.store(100, 8, 50, Bound.LOWERBOUND)
+    table.store(100, 4, 20, Bound.EXACT)
+
+    entry = table.probe(100)
+
+    assert entry.depth == 8
+    assert entry.score == 50
+
+
+def test_equal_depth_exact_entry_replaces_non_exact_entry():
+    table = TranspositionTable(size=10)
+
+    table.store(100, 5, 30, Bound.LOWERBOUND)
+    table.store(100, 5, 40, Bound.EXACT)
+
+    entry = table.probe(100)
+
+    assert entry.bound == Bound.EXACT
+    assert entry.score == 40
+
+
+def test_shallower_entry_updates_best_move_without_replacing_score():
+    table = TranspositionTable(size=10)
+
+    old_move = Move(100, 101)
+    new_move = Move(100, 102)
+
+    table.store(100, 8, 50, Bound.EXACT, old_move)
+    table.store(100, 4, 20, Bound.LOWERBOUND, new_move)
+
+    entry = table.probe(100)
+
+    assert entry.depth == 8
+    assert entry.score == 50
+    assert entry.best_move == new_move
+
+
+def test_shallower_entry_refreshes_generation():
+    table = TranspositionTable(size=10)
+
+    table.store(100, 8, 50, Bound.EXACT)
+
+    table.new_search()
+    table.store(100, 4, 20, Bound.LOWERBOUND)
+
+    entry = table.probe(100)
+
+    assert entry.depth == 8
+    assert entry.generation == table.generation
+
+
+def test_shallower_collision_does_not_replace_deeper_entry_from_old_generation():
+    table = TranspositionTable(size=10)
+
+    table.store(100, 8, 50, Bound.EXACT)
+
+    table.new_search()
+
+    # 110 collides with 100 because the table size is 10.
+    table.store(110, 3, 20, Bound.EXACT)
+
+    assert table.probe(100) is not None
+    assert table.probe(110) is None
+
+
+def test_equal_depth_collision_replaces_old_generation_entry():
+    table = TranspositionTable(size=10)
+
+    table.store(100, 5, 50, Bound.EXACT)
+
+    table.new_search()
+    table.store(110, 5, 20, Bound.EXACT)
+
+    assert table.probe(100) is None
+    assert table.probe(110) is not None
+
+
+def test_invalid_key_is_rejected():
+    table = TranspositionTable(size=10)
+
+    with pytest.raises(ValueError):
+        table.store(-1, 5, 20, Bound.EXACT)
+
+    with pytest.raises(ValueError):
+        table.probe(1 << 64)
+
+
+def test_boolean_key_is_rejected():
+    table = TranspositionTable(size=10)
+
+    with pytest.raises(ValueError):
+        table.store(True, 5, 20, Bound.EXACT)
+
+
+def test_invalid_score_is_rejected():
+    table = TranspositionTable(size=10)
+
+    with pytest.raises(ValueError):
+        table.store(100, 5, 20.5, Bound.EXACT)
+
+
+def test_boolean_depth_is_rejected():
+    table = TranspositionTable(size=10)
+
+    with pytest.raises(ValueError):
+        table.store(100, True, 20, Bound.EXACT)
