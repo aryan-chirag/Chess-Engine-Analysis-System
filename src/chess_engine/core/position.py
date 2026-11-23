@@ -11,7 +11,12 @@ from chess_engine.core.constants import (
     CastlingRights,
     is_valid_square,
 )
-from chess_engine.core.zobrist import compute_zobrist_hash
+from chess_engine.core.zobrist import (
+    compute_zobrist_hash,
+    update_zobrist_hash,
+)
+
+
 from chess_engine.core.move import Move, MoveFlag
 
 from chess_engine.core.pieces import (
@@ -462,11 +467,14 @@ class Position:
         # Switch sides.
         self.side_to_move = self.side_to_move.opposite
 
-        # Update position hash.
-        self.zobrist_hash = compute_zobrist_hash(self)
+        # Update position hash incrementally.
+        self.zobrist_hash = update_zobrist_hash(
+            self,
+            move,
+            previous_state,
+        )
 
         return previous_state
-
 
 
 
