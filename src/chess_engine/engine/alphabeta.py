@@ -1,5 +1,6 @@
 """Alpha-Beta Pruning chess search implementation."""
 
+from chess_engine.engine.move_ordering import order_moves
 from chess_engine.core.attacks import is_in_check
 from chess_engine.engine.evaluation import evaluate
 from chess_engine.engine.minimax import MATE_SCORE
@@ -13,6 +14,8 @@ def _alphabeta(position, depth, alpha, beta, nodes):
     nodes[0] += 1
 
     legal_moves = generate_legal_moves(position)
+    legal_moves = order_moves(position, legal_moves)
+
 
     # Handle checkmate and stalemate.
     if not legal_moves:
