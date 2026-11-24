@@ -14,8 +14,6 @@ def _alphabeta(position, depth, alpha, beta, nodes):
     nodes[0] += 1
 
     legal_moves = generate_legal_moves(position)
-    legal_moves = order_moves(position, legal_moves)
-
 
     # Handle checkmate and stalemate.
     if not legal_moves:
@@ -27,6 +25,9 @@ def _alphabeta(position, depth, alpha, beta, nodes):
     # Evaluate the position when the search depth is reached.
     if depth == 0:
         return evaluate(position), None
+
+    # Move ordering is only needed when we will search the moves.
+    legal_moves = order_moves(position, legal_moves)
 
     best_score = float("-inf")
     best_move = None
