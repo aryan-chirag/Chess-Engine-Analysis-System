@@ -348,4 +348,3 @@ def test_hash_restored_after_multiple_moves_and_undos():
     assert position.zobrist_hash == original_hash
 
 
-#
