@@ -8,7 +8,7 @@ from chess_engine.engine.search_result import SearchResult
 from chess_engine.movegen.legality import generate_legal_moves
 
 
-def _alphabeta(position, depth, alpha, beta, nodes):
+def _alphabeta(position, depth, alpha, beta, nodes, preferred_move=None):
     """Recursively search a position using Alpha-Beta pruning."""
 
     nodes[0] += 1
@@ -27,7 +27,14 @@ def _alphabeta(position, depth, alpha, beta, nodes):
         return evaluate(position), None
 
     # Move ordering is only needed when we will search the moves.
-    legal_moves = order_moves(position, legal_moves)
+    legal_moves = order_moves(
+    position,
+    legal_moves,
+    tt_move=preferred_move,
+)
+
+
+
 
     best_score = float("-inf")
     best_move = None
@@ -42,6 +49,7 @@ def _alphabeta(position, depth, alpha, beta, nodes):
                 -beta,
                 -alpha,
                 nodes,
+                preferred_move=None,
             )
         finally:
             position.undo_move(move, state)
@@ -61,7 +69,14 @@ def _alphabeta(position, depth, alpha, beta, nodes):
     return best_score, best_move
 
 
-def alphabeta(position, depth: int) -> SearchResult:
+def alphabeta(
+    position,
+    depth: int,
+    preferred_move=None,
+) -> SearchResult:
+
+
+
     """Search a position using Alpha-Beta pruning."""
 
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
@@ -75,6 +90,7 @@ def alphabeta(position, depth: int) -> SearchResult:
         float("-inf"),
         float("inf"),
         nodes,
+        preferred_move=preferred_move,
     )
 
     return SearchResult(

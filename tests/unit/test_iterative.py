@@ -85,3 +85,43 @@ def test_iterative_deepening_rejects_invalid_depth(depth):
 
     with pytest.raises(ValueError):
         iterative_deepening(position, depth)
+
+
+def test_iterative_deepening_uses_previous_best_move(monkeypatch):
+    position = Position.starting_position()
+
+    searched_moves = []
+    original_alphabeta = alphabeta
+
+    def tracking_alphabeta(position, depth, preferred_move=None):
+        searched_moves.append(preferred_move)
+        return original_alphabeta(
+            position,
+            depth,
+            preferred_move=preferred_move,
+        )
+
+    monkeypatch.setattr(
+        "chess_engine.engine.iterative.alphabeta",
+        tracking_alphabeta,
+    )
+
+    iterative_deepening(position, 3)
+
+    assert searched_moves[0] is None
+    assert searched_moves[1] is not None
+    assert searched_moves[2] is not None
+
+
+def test_alphabeta_accepts_preferred_move():
+    position = Position.starting_position()
+
+    initial_result = alphabeta(position, 1)
+
+    result = alphabeta(
+        position,
+        2,
+        preferred_move=initial_result.best_move,
+    )
+
+    assert result.best_move is not None

@@ -1,4 +1,3 @@
-
 """Iterative Deepening chess search implementation."""
 
 from chess_engine.engine.alphabeta import alphabeta
@@ -17,19 +16,24 @@ def iterative_deepening(position, max_depth: int) -> SearchResult:
 
     total_nodes = 0
     last_result = None
+    preferred_move = None
 
-    # Depth zero is handled as a single fixed-depth search.
     if max_depth == 0:
         return alphabeta(position, 0)
 
     for depth in range(1, max_depth + 1):
 
-        result = alphabeta(position, depth)
+        result = alphabeta(
+            position,
+            depth,
+            preferred_move=preferred_move,
+        )
 
         total_nodes += result.nodes
         last_result = result
 
-        # No legal move means the root position is terminal.
+        preferred_move = result.best_move
+
         if result.best_move is None:
             break
 
