@@ -255,3 +255,63 @@ def test_boolean_depth_is_rejected():
 
     with pytest.raises(ValueError):
         table.store(100, True, 20, Bound.EXACT)
+
+def test_probe_statistics():
+    table = TranspositionTable(size=10)
+
+    table.store(123, 2, 50, Bound.EXACT)
+
+    table.probe(123)
+    table.probe(456)
+
+    stats = table.get_stats()
+
+    assert stats["probes"] == 2
+    assert stats["hits"] == 1
+    assert stats["misses"] == 1
+    assert stats["hit_rate"] == 50.0
+
+
+def test_store_statistics():
+    table = TranspositionTable(size=10)
+
+    table.store(123, 2, 50, Bound.EXACT)
+
+    stats = table.get_stats()
+
+    assert stats["stores"] == 1
+    assert stats["replacements"] == 0
+
+
+def test_replacement_statistics():
+    table = TranspositionTable(size=10)
+
+    table.store(123, 1, 50, Bound.LOWERBOUND)
+    table.store(123, 3, 80, Bound.EXACT)
+
+    stats = table.get_stats()
+
+    assert stats["stores"] == 2
+    assert stats["replacements"] == 1
+
+
+def test_cutoff_statistics():
+    table = TranspositionTable(size=10)
+
+    table.record_cutoff()
+
+    assert table.get_stats()["cutoffs"] == 1
+
+
+def test_reset_statistics_preserves_entries():
+    table = TranspositionTable(size=10)
+
+    table.store(123, 2, 50, Bound.EXACT)
+    table.probe(123)
+
+    table.reset_stats()
+
+    assert table.probe(123) is not None
+    assert table.get_stats()["probes"] == 1
+    assert table.get_stats()["hits"] == 1
+    assert table.get_stats()["stores"] == 0

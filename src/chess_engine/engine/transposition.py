@@ -33,12 +33,31 @@ class TranspositionTable:
         self.generation = 0
         self.entry_count = 0
 
+        self.reset_stats()
+
+    def reset_stats(self):
+        """Reset performance counters without clearing stored entries."""
+
+        self.probes = 0
+        self.hits = 0
+        self.misses = 0
+        self.cutoffs = 0
+        self.stores = 0
+        self.replacements = 0
+
+    def record_cutoff(self):
+        """Record a search cutoff caused by a TT bound."""
+
+        self.cutoffs += 1
+
     def _validate_key(self, key):
         if isinstance(key, bool) or not isinstance(key, int):
             raise ValueError("Transposition key must be an integer.")
 
         if not 0 <= key < (1 << 64):
-            raise ValueError("Transposition key must be an unsigned 64-bit integer.")
+            raise ValueError(
+                "Transposition key must be an unsigned 64-bit integer."
+            )
 
     def _index(self, key):
         return key % self.size
@@ -48,11 +67,15 @@ class TranspositionTable:
 
         self._validate_key(key)
 
+        self.probes += 1
+
         entry = self.entries[self._index(key)]
 
         if entry is not None and entry.key == key:
+            self.hits += 1
             return entry
 
+        self.misses += 1
         return None
 
     def store(self, key, depth, score, bound, best_move=None):
@@ -88,6 +111,7 @@ class TranspositionTable:
         if existing is None:
             self.entries[index] = new_entry
             self.entry_count += 1
+            self.stores += 1
             return
 
         # Same position.
@@ -104,6 +128,9 @@ class TranspositionTable:
 
             if replace:
                 self.entries[index] = new_entry
+                self.stores += 1
+                self.replacements += 1
+
             else:
                 # Preserve the deeper search result, but refresh
                 # its generation and retain a useful move.
@@ -124,18 +151,43 @@ class TranspositionTable:
             )
         ):
             self.entries[index] = new_entry
+            self.stores += 1
+            self.replacements += 1
 
     def new_search(self):
         """Advance the generation for replacement management."""
+
         self.generation += 1
 
     def clear(self):
-        """Remove every stored entry."""
+        """Remove every stored entry and reset all statistics."""
+
         self.entries = [None] * self.size
         self.generation = 0
         self.entry_count = 0
+        self.reset_stats()
 
     def hashfull(self):
         """Return approximate occupied table capacity in per-mille."""
 
         return min(1000, self.entry_count * 1000 // self.size)
+
+    def get_stats(self):
+        """Return a snapshot of transposition table statistics."""
+
+        return {
+            "probes": self.probes,
+            "hits": self.hits,
+            "misses": self.misses,
+            "cutoffs": self.cutoffs,
+            "stores": self.stores,
+            "replacements": self.replacements,
+            "hashfull": self.hashfull(),
+            "entries": self.entry_count,
+            "capacity": self.size,
+            "hit_rate": (
+                self.hits / self.probes * 100
+                if self.probes > 0
+                else 0.0
+            ),
+        }

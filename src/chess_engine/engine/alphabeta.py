@@ -38,30 +38,37 @@ def _alphabeta(
     tt_move = preferred_move
 
     if transposition_table is not None:
+
         entry = transposition_table.probe(position.zobrist_hash)
 
         if entry is not None:
+
             cached_move_is_legal = entry.best_move in legal_moves
 
             if cached_move_is_legal:
                 tt_move = entry.best_move
 
             if entry.depth >= depth:
+
                 if (
                     entry.bound == Bound.EXACT
                     and cached_move_is_legal
                 ):
                     return entry.score, entry.best_move
 
-                if cached_move_is_legal:
-                    if entry.bound == Bound.LOWERBOUND:
-                        alpha = max(alpha, entry.score)
+                if entry.bound == Bound.LOWERBOUND:
+                    alpha = max(alpha, entry.score)
 
-                    elif entry.bound == Bound.UPPERBOUND:
-                        beta = min(beta, entry.score)
+                elif entry.bound == Bound.UPPERBOUND:
+                    beta = min(beta, entry.score)
 
-                    if alpha >= beta:
-                        return entry.score, entry.best_move
+                if alpha >= beta:
+                    transposition_table.record_cutoff()
+
+                    return (
+                        entry.score,
+                        entry.best_move if cached_move_is_legal else None,
+                    )
 
     # Record the effective search window after TT adjustments.
     search_alpha = alpha
@@ -78,6 +85,7 @@ def _alphabeta(
     best_move = None
 
     for move in legal_moves:
+
         state = position.make_move(move)
 
         try:
@@ -89,6 +97,7 @@ def _alphabeta(
                 nodes,
                 transposition_table=transposition_table,
             )
+
         finally:
             position.undo_move(move, state)
 
@@ -105,6 +114,7 @@ def _alphabeta(
 
     # Classify and store the search result.
     if transposition_table is not None:
+
         if best_score <= search_alpha:
             bound = Bound.UPPERBOUND
 
