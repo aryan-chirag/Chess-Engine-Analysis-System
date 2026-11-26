@@ -2,7 +2,7 @@
 """Tests for Iterative Deepening search."""
 
 import pytest
-
+from chess_engine.engine.transposition import TranspositionTable
 from chess_engine.core.position import Position
 from chess_engine.engine.alphabeta import alphabeta
 from chess_engine.engine.iterative import iterative_deepening
@@ -89,16 +89,23 @@ def test_iterative_deepening_rejects_invalid_depth(depth):
 
 def test_iterative_deepening_uses_previous_best_move(monkeypatch):
     position = Position.starting_position()
-
     searched_moves = []
+
     original_alphabeta = alphabeta
 
-    def tracking_alphabeta(position, depth, preferred_move=None):
+    def tracking_alphabeta(
+        position,
+        depth,
+        preferred_move=None,
+        transposition_table=None,
+    ):
         searched_moves.append(preferred_move)
+
         return original_alphabeta(
             position,
             depth,
             preferred_move=preferred_move,
+            transposition_table=transposition_table,
         )
 
     monkeypatch.setattr(
@@ -113,6 +120,7 @@ def test_iterative_deepening_uses_previous_best_move(monkeypatch):
     assert searched_moves[2] is not None
 
 
+
 def test_alphabeta_accepts_preferred_move():
     position = Position.starting_position()
 
@@ -125,3 +133,61 @@ def test_alphabeta_accepts_preferred_move():
     )
 
     assert result.best_move is not None
+
+def test_iterative_deepening_reuses_same_transposition_table(monkeypatch):
+    position = Position.starting_position()
+    table = TranspositionTable()
+    used_tables = []
+
+    original_alphabeta = alphabeta
+
+    def tracking_alphabeta(
+        position,
+        depth,
+        preferred_move=None,
+        transposition_table=None,
+    ):
+        used_tables.append(transposition_table)
+
+        return original_alphabeta(
+            position,
+            depth,
+            preferred_move=preferred_move,
+            transposition_table=transposition_table,
+        )
+
+    monkeypatch.setattr(
+        "chess_engine.engine.iterative.alphabeta",
+        tracking_alphabeta,
+    )
+
+    iterative_deepening(
+        position,
+        3,
+        transposition_table=table,
+    )
+
+    assert len(used_tables) == 3
+    assert all(used_table is table for used_table in used_tables)
+
+
+def test_iterative_deepening_creates_transposition_table():
+    position = Position.starting_position()
+
+    result = iterative_deepening(position, 2)
+
+    assert result.best_move is not None
+    assert result.depth == 2
+
+
+def test_iterative_deepening_rejects_invalid_transposition_table():
+    position = Position.starting_position()
+
+    with pytest.raises(ValueError):
+        iterative_deepening(
+            position,
+            2,
+            transposition_table="not a table",
+        )
+
+
