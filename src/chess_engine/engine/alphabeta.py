@@ -4,6 +4,7 @@ from chess_engine.core.attacks import is_in_check
 from chess_engine.engine.evaluation import evaluate
 from chess_engine.engine.minimax import MATE_SCORE
 from chess_engine.engine.move_ordering import order_moves
+from chess_engine.engine.quiescence import _quiescence
 from chess_engine.engine.search_result import SearchResult
 from chess_engine.engine.transposition import Bound, TranspositionTable
 from chess_engine.movegen.legality import generate_legal_moves
@@ -17,33 +18,50 @@ def _alphabeta(
     nodes,
     transposition_table=None,
     preferred_move=None,
+    use_quiescence=True,
+    max_quiescence_ply=16,
 ):
-    """Recursively search a position using Alpha-Beta pruning."""
+    """Search a position and return its principal variation."""
 
     nodes[0] += 1
+
     original_alpha = alpha
     original_beta = beta
 
     legal_moves = generate_legal_moves(position)
 
+    # Handle checkmate and stalemate.
     if not legal_moves:
         if is_in_check(position):
-            return -MATE_SCORE, None
+            return -MATE_SCORE, None, ()
 
-        return 0, None
+        return 0, None, ()
 
+    # Extend the search using Quiescence Search at the horizon.
     if depth == 0:
-        return evaluate(position), None
+        if use_quiescence:
+            score, q_nodes = _quiescence(
+                position,
+                alpha,
+                beta,
+                ply=0,
+                max_ply=max_quiescence_ply,
+                count_node=False,
+            )
+
+            nodes[0] += q_nodes
+
+            return score, None, ()
+
+        return evaluate(position), None, ()
 
     tt_move = preferred_move
 
     if transposition_table is not None:
-
         entry = transposition_table.probe(position.zobrist_hash)
 
         if entry is not None:
 
-            # Measure whether the stored search was deep enough.
             if entry.depth >= depth:
                 transposition_table.depth_hits += 1
             else:
@@ -51,12 +69,10 @@ def _alphabeta(
 
             cached_move_is_legal = entry.best_move in legal_moves
 
-            # Measure successful cached move reuse.
             if cached_move_is_legal:
                 tt_move = entry.best_move
                 transposition_table.move_ordering_hits += 1
 
-            # Only sufficiently deep entries can affect the search window.
             if entry.depth >= depth:
 
                 if (
@@ -64,7 +80,13 @@ def _alphabeta(
                     and cached_move_is_legal
                 ):
                     transposition_table.exact_hits += 1
-                    return entry.score, entry.best_move
+
+                    # This is a cached move, not a reconstructed full PV.
+                    return (
+                        entry.score,
+                        entry.best_move,
+                        (entry.best_move,),
+                    )
 
                 if entry.bound == Bound.LOWERBOUND:
                     alpha = max(alpha, entry.score)
@@ -77,12 +99,17 @@ def _alphabeta(
                 if alpha >= beta:
                     transposition_table.record_cutoff()
 
+                    cached_pv = (
+                        (entry.best_move,)
+                        if cached_move_is_legal
+                        else ()
+                    )
+
                     return (
                         entry.score,
                         entry.best_move if cached_move_is_legal else None,
+                        cached_pv,
                     )
-
-    
 
     legal_moves = order_moves(
         position,
@@ -92,19 +119,22 @@ def _alphabeta(
 
     best_score = float("-inf")
     best_move = None
+    best_pv = ()
 
     for move in legal_moves:
 
         state = position.make_move(move)
 
         try:
-            child_score, _ = _alphabeta(
+            child_score, _, child_pv = _alphabeta(
                 position,
                 depth - 1,
                 -beta,
                 -alpha,
                 nodes,
                 transposition_table=transposition_table,
+                use_quiescence=use_quiescence,
+                max_quiescence_ply=max_quiescence_ply,
             )
 
         finally:
@@ -115,6 +145,7 @@ def _alphabeta(
         if score > best_score:
             best_score = score
             best_move = move
+            best_pv = (move,) + child_pv
 
         alpha = max(alpha, score)
 
@@ -130,8 +161,6 @@ def _alphabeta(
         else:
             bound = Bound.EXACT
 
-
-
         transposition_table.store(
             position.zobrist_hash,
             depth,
@@ -140,7 +169,7 @@ def _alphabeta(
             best_move,
         )
 
-    return best_score, best_move
+    return best_score, best_move, best_pv
 
 
 def alphabeta(
@@ -148,6 +177,8 @@ def alphabeta(
     depth: int,
     preferred_move=None,
     transposition_table=None,
+    use_quiescence=True,
+    max_quiescence_ply=16,
 ) -> SearchResult:
     """Search a position using Alpha-Beta pruning."""
 
@@ -160,9 +191,21 @@ def alphabeta(
     ):
         raise ValueError("Invalid transposition table.")
 
+    if not isinstance(use_quiescence, bool):
+        raise ValueError("Quiescence setting must be a boolean.")
+
+    if (
+        isinstance(max_quiescence_ply, bool)
+        or not isinstance(max_quiescence_ply, int)
+        or max_quiescence_ply < 1
+    ):
+        raise ValueError(
+            "Maximum quiescence ply must be a positive integer."
+        )
+
     nodes = [0]
 
-    score, best_move = _alphabeta(
+    score, best_move, principal_variation = _alphabeta(
         position,
         depth,
         float("-inf"),
@@ -170,6 +213,8 @@ def alphabeta(
         nodes,
         transposition_table=transposition_table,
         preferred_move=preferred_move,
+        use_quiescence=use_quiescence,
+        max_quiescence_ply=max_quiescence_ply,
     )
 
     return SearchResult(
@@ -177,4 +222,5 @@ def alphabeta(
         score=int(score),
         depth=depth,
         nodes=nodes[0],
+        principal_variation=principal_variation,
     )

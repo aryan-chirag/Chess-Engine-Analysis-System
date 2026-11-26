@@ -32,7 +32,11 @@ def test_alphabeta_matches_negamax_score(depth):
     position = Position.starting_position()
 
     negamax_result = negamax(position, depth)
-    alphabeta_result = alphabeta(position, depth)
+    alphabeta_result = alphabeta(
+        position,
+        depth,
+        use_quiescence=False,
+    )
 
     assert alphabeta_result.score == negamax_result.score
 
@@ -42,7 +46,11 @@ def test_alphabeta_matches_minimax_score(depth):
     position = Position.starting_position()
 
     minimax_result = minimax(position, depth)
-    alphabeta_result = alphabeta(position, depth)
+    alphabeta_result = alphabeta(
+        position,
+        depth,
+        use_quiescence=False,
+    )
 
     assert alphabeta_result.score == minimax_result.score
 
@@ -51,7 +59,11 @@ def test_alphabeta_searches_no_more_nodes_than_negamax():
     position = Position.starting_position()
 
     negamax_result = negamax(position, 3)
-    alphabeta_result = alphabeta(position, 3)
+    alphabeta_result = alphabeta(
+        position,
+        3,
+        use_quiescence=False,
+    )
 
     assert alphabeta_result.nodes <= negamax_result.nodes
 
@@ -84,3 +96,19 @@ def test_alphabeta_rejects_invalid_depth(depth):
 
     with pytest.raises(ValueError):
         alphabeta(position, depth)
+
+
+@pytest.mark.parametrize("value", [1, 0, None, "true"])
+def test_alphabeta_rejects_invalid_quiescence_setting(value):
+    position = Position.starting_position()
+
+    with pytest.raises(ValueError):
+        alphabeta(position, 2, use_quiescence=value)
+
+
+@pytest.mark.parametrize("max_ply", [0, -1, 1.5, True])
+def test_alphabeta_rejects_invalid_quiescence_depth(max_ply):
+    position = Position.starting_position()
+
+    with pytest.raises(ValueError):
+        alphabeta(position, 2, max_quiescence_ply=max_ply)
