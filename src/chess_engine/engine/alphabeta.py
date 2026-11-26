@@ -21,17 +21,17 @@ def _alphabeta(
     """Recursively search a position using Alpha-Beta pruning."""
 
     nodes[0] += 1
+    original_alpha = alpha
+    original_beta = beta
 
     legal_moves = generate_legal_moves(position)
 
-    # Handle checkmate and stalemate.
     if not legal_moves:
         if is_in_check(position):
             return -MATE_SCORE, None
 
         return 0, None
 
-    # Evaluate the position when the search depth is reached.
     if depth == 0:
         return evaluate(position), None
 
@@ -43,24 +43,36 @@ def _alphabeta(
 
         if entry is not None:
 
+            # Measure whether the stored search was deep enough.
+            if entry.depth >= depth:
+                transposition_table.depth_hits += 1
+            else:
+                transposition_table.shallow_hits += 1
+
             cached_move_is_legal = entry.best_move in legal_moves
 
+            # Measure successful cached move reuse.
             if cached_move_is_legal:
                 tt_move = entry.best_move
+                transposition_table.move_ordering_hits += 1
 
+            # Only sufficiently deep entries can affect the search window.
             if entry.depth >= depth:
 
                 if (
                     entry.bound == Bound.EXACT
                     and cached_move_is_legal
                 ):
+                    transposition_table.exact_hits += 1
                     return entry.score, entry.best_move
 
                 if entry.bound == Bound.LOWERBOUND:
                     alpha = max(alpha, entry.score)
+                    transposition_table.bound_hits += 1
 
                 elif entry.bound == Bound.UPPERBOUND:
                     beta = min(beta, entry.score)
+                    transposition_table.bound_hits += 1
 
                 if alpha >= beta:
                     transposition_table.record_cutoff()
@@ -70,11 +82,8 @@ def _alphabeta(
                         entry.best_move if cached_move_is_legal else None,
                     )
 
-    # Record the effective search window after TT adjustments.
-    search_alpha = alpha
-    search_beta = beta
+    
 
-    # Search promising moves first.
     legal_moves = order_moves(
         position,
         legal_moves,
@@ -112,17 +121,16 @@ def _alphabeta(
         if alpha >= beta:
             break
 
-    # Classify and store the search result.
     if transposition_table is not None:
 
-        if best_score <= search_alpha:
+        if best_score <= original_alpha:
             bound = Bound.UPPERBOUND
-
-        elif best_score >= search_beta:
+        elif best_score >= original_beta:
             bound = Bound.LOWERBOUND
-
         else:
             bound = Bound.EXACT
+
+
 
         transposition_table.store(
             position.zobrist_hash,

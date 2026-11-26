@@ -45,8 +45,14 @@ class TranspositionTable:
         self.stores = 0
         self.replacements = 0
 
+        self.depth_hits = 0
+        self.shallow_hits = 0
+        self.exact_hits = 0
+        self.bound_hits = 0
+        self.move_ordering_hits = 0
+
     def record_cutoff(self):
-        """Record a search cutoff caused by a TT bound."""
+        """Record a cutoff caused by a transposition table bound."""
 
         self.cutoffs += 1
 
@@ -66,7 +72,6 @@ class TranspositionTable:
         """Retrieve an entry if its complete key matches."""
 
         self._validate_key(key)
-
         self.probes += 1
 
         entry = self.entries[self._index(key)]
@@ -107,14 +112,12 @@ class TranspositionTable:
             generation=self.generation,
         )
 
-        # Empty slot.
         if existing is None:
             self.entries[index] = new_entry
             self.entry_count += 1
             self.stores += 1
             return
 
-        # Same position.
         if existing.key == key:
 
             replace = (
@@ -132,8 +135,6 @@ class TranspositionTable:
                 self.replacements += 1
 
             else:
-                # Preserve the deeper search result, but refresh
-                # its generation and retain a useful move.
                 existing.generation = self.generation
 
                 if best_move is not None:
@@ -141,8 +142,6 @@ class TranspositionTable:
 
             return
 
-        # Different position: prefer deeper entries.
-        # At equal depth, prefer the entry from the newer generation.
         if (
             depth > existing.depth
             or (
@@ -160,7 +159,7 @@ class TranspositionTable:
         self.generation += 1
 
     def clear(self):
-        """Remove every stored entry and reset all statistics."""
+        """Remove all entries and reset statistics."""
 
         self.entries = [None] * self.size
         self.generation = 0
@@ -182,12 +181,16 @@ class TranspositionTable:
             "cutoffs": self.cutoffs,
             "stores": self.stores,
             "replacements": self.replacements,
+            "depth_hits": self.depth_hits,
+            "shallow_hits": self.shallow_hits,
+            "exact_hits": self.exact_hits,
+            "bound_hits": self.bound_hits,
+            "move_ordering_hits": self.move_ordering_hits,
             "hashfull": self.hashfull(),
             "entries": self.entry_count,
             "capacity": self.size,
             "hit_rate": (
                 self.hits / self.probes * 100
-                if self.probes > 0
-                else 0.0
+                if self.probes else 0.0
             ),
         }
