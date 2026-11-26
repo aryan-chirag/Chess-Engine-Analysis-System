@@ -319,9 +319,28 @@ def test_upper_bound_window_narrowing_preserves_exact_classification(
     stored_bounds = []
     original_store = table.store
 
-    def recording_store(key, depth, score, bound, best_move=None):
+
+
+    def recording_store(
+        key,
+        depth,
+        score,
+        bound,
+        best_move=None,
+        search_config=(True, 16),
+    ):
         stored_bounds.append((score, bound))
-        original_store(key, depth, score, bound, best_move)
+
+        original_store(
+            key,
+            depth,
+            score,
+            bound,
+            best_move,
+            search_config=search_config,
+        )
+
+
 
     monkeypatch.setattr(table, "store", recording_store)
 
@@ -340,4 +359,67 @@ def test_upper_bound_window_narrowing_preserves_exact_classification(
 
     assert stored_bounds
     assert stored_bounds[-1] == (50, Bound.EXACT)
-    
+
+def test_tt_does_not_reuse_quiescence_enabled_entry_when_disabled():
+    position = Position.starting_position()
+    table = TranspositionTable()
+
+    alphabeta(
+        position,
+        2,
+        transposition_table=table,
+        use_quiescence=True,
+    )
+
+    result = alphabeta(
+        position,
+        2,
+        transposition_table=table,
+        use_quiescence=False,
+    )
+
+    assert result.nodes > 1
+
+
+def test_tt_does_not_reuse_different_quiescence_ply_limit():
+    position = Position.starting_position()
+    table = TranspositionTable()
+
+    alphabeta(
+        position,
+        2,
+        transposition_table=table,
+        max_quiescence_ply=8,
+    )
+
+    result = alphabeta(
+        position,
+        2,
+        transposition_table=table,
+        max_quiescence_ply=4,
+    )
+
+    assert result.nodes > 1
+
+
+def test_tt_reuses_matching_quiescence_configuration():
+    position = Position.starting_position()
+    table = TranspositionTable()
+
+    first_result = alphabeta(
+        position,
+        2,
+        transposition_table=table,
+        max_quiescence_ply=8,
+    )
+
+    second_result = alphabeta(
+        position,
+        2,
+        transposition_table=table,
+        max_quiescence_ply=8,
+    )
+
+    assert second_result.score == first_result.score
+    assert second_result.best_move == first_result.best_move
+    assert second_result.nodes == 1

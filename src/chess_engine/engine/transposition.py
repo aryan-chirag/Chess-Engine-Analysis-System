@@ -6,6 +6,9 @@ from enum import Enum, auto
 from chess_engine.core.move import Move
 
 
+DEFAULT_SEARCH_CONFIG = (True, 16)
+
+
 class Bound(Enum):
     EXACT = auto()
     LOWERBOUND = auto()
@@ -20,6 +23,7 @@ class TTEntry:
     bound: Bound
     best_move: Move | None
     generation: int
+    search_config: tuple[bool, int] = DEFAULT_SEARCH_CONFIG
 
 
 class TranspositionTable:
@@ -65,28 +69,73 @@ class TranspositionTable:
                 "Transposition key must be an unsigned 64-bit integer."
             )
 
+    @staticmethod
+    def _validate_search_config(search_config):
+        if (
+            not isinstance(search_config, tuple)
+            or len(search_config) != 2
+        ):
+            raise ValueError("Invalid search configuration.")
+
+        use_quiescence, max_quiescence_ply = search_config
+
+        if not isinstance(use_quiescence, bool):
+            raise ValueError("Invalid quiescence setting.")
+
+        if (
+            isinstance(max_quiescence_ply, bool)
+            or not isinstance(max_quiescence_ply, int)
+            or max_quiescence_ply < 0
+        ):
+            raise ValueError("Invalid maximum quiescence ply.")
+
+        if use_quiescence and max_quiescence_ply < 1:
+            raise ValueError(
+                "Quiescence Search requires a positive maximum ply."
+            )
+
+        if not use_quiescence and max_quiescence_ply != 0:
+            raise ValueError(
+                "Disabled Quiescence Search must use maximum ply zero."
+            )
+
     def _index(self, key):
         return key % self.size
 
-    def probe(self, key):
-        """Retrieve an entry if its complete key matches."""
+    def probe(self, key, search_config=DEFAULT_SEARCH_CONFIG):
+        """Retrieve an entry if its key and search configuration match."""
 
         self._validate_key(key)
+        self._validate_search_config(search_config)
+
         self.probes += 1
 
         entry = self.entries[self._index(key)]
 
-        if entry is not None and entry.key == key:
+        if (
+            entry is not None
+            and entry.key == key
+            and entry.search_config == search_config
+        ):
             self.hits += 1
             return entry
 
         self.misses += 1
         return None
 
-    def store(self, key, depth, score, bound, best_move=None):
+    def store(
+        self,
+        key,
+        depth,
+        score,
+        bound,
+        best_move=None,
+        search_config=DEFAULT_SEARCH_CONFIG,
+    ):
         """Store a search result using depth and generation preferences."""
 
         self._validate_key(key)
+        self._validate_search_config(search_config)
 
         if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
             raise ValueError("Search depth must be a non-negative integer.")
@@ -110,6 +159,7 @@ class TranspositionTable:
             bound=bound,
             best_move=best_move,
             generation=self.generation,
+            search_config=search_config,
         )
 
         if existing is None:
@@ -119,6 +169,13 @@ class TranspositionTable:
             return
 
         if existing.key == key:
+
+            # Results from different search configurations are incompatible.
+            if existing.search_config != search_config:
+                self.entries[index] = new_entry
+                self.stores += 1
+                self.replacements += 1
+                return
 
             replace = (
                 depth > existing.depth

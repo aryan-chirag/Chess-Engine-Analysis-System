@@ -315,3 +315,100 @@ def test_reset_statistics_preserves_entries():
     assert table.get_stats()["probes"] == 1
     assert table.get_stats()["hits"] == 1
     assert table.get_stats()["stores"] == 0
+
+def test_probe_rejects_different_search_configuration():
+    table = TranspositionTable(size=16)
+
+    table.store(
+        123,
+        5,
+        30,
+        Bound.EXACT,
+        search_config=(True, 16),
+    )
+
+    assert table.probe(
+        123,
+        search_config=(False, 0),
+    ) is None
+
+
+def test_probe_accepts_matching_search_configuration():
+    table = TranspositionTable(size=16)
+
+    table.store(
+        123,
+        5,
+        30,
+        Bound.EXACT,
+        search_config=(True, 8),
+    )
+
+    entry = table.probe(
+        123,
+        search_config=(True, 8),
+    )
+
+    assert entry is not None
+    assert entry.score == 30
+
+
+def test_different_search_configuration_replaces_existing_entry():
+    table = TranspositionTable(size=16)
+
+    table.store(
+        123,
+        10,
+        100,
+        Bound.EXACT,
+        search_config=(True, 16),
+    )
+
+    table.store(
+        123,
+        2,
+        20,
+        Bound.EXACT,
+        search_config=(False, 0),
+    )
+
+    entry = table.probe(
+        123,
+        search_config=(False, 0),
+    )
+
+    assert entry is not None
+    assert entry.depth == 2
+    assert entry.score == 20
+    assert entry.search_config == (False, 0)
+
+
+@pytest.mark.parametrize(
+    "search_config",
+    [
+        (1, 16),
+        (True, 0),
+        (False, 16),
+        (True, -1),
+        (True, True),
+        (True,),
+        [True, 16],
+    ],
+)
+def test_invalid_search_configuration_is_rejected(search_config):
+    table = TranspositionTable(size=16)
+
+    with pytest.raises(ValueError):
+        table.store(
+            123,
+            5,
+            30,
+            Bound.EXACT,
+            search_config=search_config,
+        )
+
+    with pytest.raises(ValueError):
+        table.probe(
+            123,
+            search_config=search_config,
+        )

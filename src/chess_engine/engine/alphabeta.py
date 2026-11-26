@@ -6,7 +6,10 @@ from chess_engine.engine.minimax import MATE_SCORE
 from chess_engine.engine.move_ordering import order_moves
 from chess_engine.engine.quiescence import _quiescence
 from chess_engine.engine.search_result import SearchResult
-from chess_engine.engine.transposition import Bound, TranspositionTable
+from chess_engine.engine.transposition import (
+    Bound,
+    TranspositionTable,
+)
 from chess_engine.movegen.legality import generate_legal_moves
 
 
@@ -55,10 +58,19 @@ def _alphabeta(
 
         return evaluate(position), None, ()
 
+    search_config = (
+        (True, max_quiescence_ply)
+        if use_quiescence
+        else (False, 0)
+    )
+
     tt_move = preferred_move
 
     if transposition_table is not None:
-        entry = transposition_table.probe(position.zobrist_hash)
+        entry = transposition_table.probe(
+            position.zobrist_hash,
+            search_config=search_config,
+        )
 
         if entry is not None:
 
@@ -167,6 +179,7 @@ def _alphabeta(
             int(best_score),
             bound,
             best_move,
+            search_config=search_config,
         )
 
     return best_score, best_move, best_pv
