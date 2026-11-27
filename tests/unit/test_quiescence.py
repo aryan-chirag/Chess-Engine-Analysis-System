@@ -98,3 +98,47 @@ def test_quiescence_handles_beta_cutoff():
 
     assert score >= -50
     assert nodes == 1
+
+
+def test_quiescence_stops_at_maximum_ply_in_quiet_position():
+    position = Position.starting_position()
+
+    score, nodes = quiescence(position, max_ply=1)
+
+    assert isinstance(score, int)
+    assert nodes == 1
+
+
+def test_quiescence_continues_when_in_check_at_maximum_ply():
+    position = parse_fen(
+        "4k3/8/8/8/8/8/4r3/4K3 w - - 0 1"
+    )
+
+    original_fen = generate_fen(position)
+    original_hash = position.zobrist_hash
+
+    score, nodes = quiescence(position, max_ply=1)
+
+    assert isinstance(score, int)
+    assert nodes > 1
+    assert generate_fen(position) == original_fen
+    assert position.zobrist_hash == original_hash
+
+
+def test_quiescence_detects_checkmate_at_maximum_ply():
+    position = parse_fen(
+        "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1"
+    )
+
+    score, nodes = quiescence(position, max_ply=1)
+
+    assert score == -MATE_SCORE
+    assert nodes == 1
+
+
+def test_quiescence_validates_maximum_ply():
+    position = Position.starting_position()
+
+    for invalid_value in (0, -1, 1.5, True, "16"):
+        with pytest.raises(ValueError):
+            quiescence(position, max_ply=invalid_value)

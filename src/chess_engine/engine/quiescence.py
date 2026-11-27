@@ -14,79 +14,100 @@ def _quiescence(
     ply,
     max_ply,
     count_node=True,
+    repetition_counts=None,
 ):
     """Search tactical continuations until the position is quiet."""
 
+    if repetition_counts is None:
+        repetition_counts = {}
+
     nodes = 1 if count_node else 0
 
-    in_check = is_in_check(position)
-    legal_moves = generate_legal_moves(position)
+    position_hash = position.zobrist_hash
+    occurrences = repetition_counts.get(position_hash, 0)
 
-    # Detect checkmate and stalemate.
-    if not legal_moves:
-        if in_check:
-            return -MATE_SCORE, nodes
-
+    if occurrences >= 2:
         return 0, nodes
 
-    # Safety limit prevents excessively long tactical sequences.
-    if ply >= max_ply:
-        return evaluate(position), nodes
+    repetition_counts[position_hash] = occurrences + 1
 
-    if not in_check:
-        stand_pat = evaluate(position)
+    try:
+        in_check = is_in_check(position)
+        legal_moves = generate_legal_moves(position)
 
-        if stand_pat >= beta:
-            return stand_pat, nodes
+        # Detect checkmate and stalemate.
+        if not legal_moves:
+            if in_check:
+                return -MATE_SCORE, nodes
 
-        alpha = max(alpha, stand_pat)
+            return 0, nodes
 
-        tactical_moves = [
-            move
-            for move in legal_moves
-            if move.is_capture or move.is_promotion
-        ]
+        # The maximum ply is a soft limit.
+        # Checked positions must still search legal evasions.
+        if ply >= max_ply and not in_check:
+            return evaluate(position), nodes
 
-        if not tactical_moves:
-            return stand_pat, nodes
+        if not in_check:
+            stand_pat = evaluate(position)
 
-        moves = order_moves(position, tactical_moves)
+            if stand_pat >= beta:
+                return stand_pat, nodes
 
-        best_score = stand_pat
+            alpha = max(alpha, stand_pat)
 
-    else:
-        # No stand-pat evaluation is allowed while in check.
-        moves = order_moves(position, legal_moves)
+            tactical_moves = [
+                move
+                for move in legal_moves
+                if move.is_capture or move.is_promotion
+            ]
 
-        best_score = float("-inf")
+            if not tactical_moves:
+                return stand_pat, nodes
 
-    for move in moves:
-        state = position.make_move(move)
+            moves = order_moves(position, tactical_moves)
 
-        try:
-            child_score, child_nodes = _quiescence(
-                position,
-                -beta,
-                -alpha,
-                ply + 1,
-                max_ply,
-            )
-        finally:
-            position.undo_move(move, state)
+            best_score = stand_pat
 
-        nodes += child_nodes
+        else:
+            # No stand-pat evaluation is allowed while in check.
+            moves = order_moves(position, legal_moves)
 
-        score = -child_score
+            best_score = float("-inf")
 
-        if score > best_score:
-            best_score = score
+        for move in moves:
+            state = position.make_move(move)
 
-        alpha = max(alpha, score)
+            try:
+                child_score, child_nodes = _quiescence(
+                    position,
+                    -beta,
+                    -alpha,
+                    ply + 1,
+                    max_ply,
+                    repetition_counts=repetition_counts,
+                )
+            finally:
+                position.undo_move(move, state)
 
-        if alpha >= beta:
-            break
+            nodes += child_nodes
 
-    return int(best_score), nodes
+            score = -child_score
+
+            if score > best_score:
+                best_score = score
+
+            alpha = max(alpha, score)
+
+            if alpha >= beta:
+                break
+
+        return int(best_score), nodes
+
+    finally:
+        if occurrences == 0:
+            del repetition_counts[position_hash]
+        else:
+            repetition_counts[position_hash] = occurrences
 
 
 def quiescence(
